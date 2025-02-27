@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -98,4 +99,42 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Star animation styles */
+.star-animation {
+  font-size: 2rem;
+  position: absolute;
+  z-index: 30;
+  filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.7));
+}
+
+/* Custom animations */
+@keyframes bounce-in {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.bounce-in {
+  animation: bounce-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Draggable item hover effects */
+.word-item {
+  transition: all 0.2s ease;
+}
+
+.word-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }

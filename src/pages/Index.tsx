@@ -1,11 +1,561 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+
+import { useState, useEffect, useRef } from "react";
+import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+import gsap from "gsap";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+
+// Define game data types
+interface Word {
+  id: string;
+  content: string;
+  correctSlot: string;
+}
+
+interface Slot {
+  id: string;
+  content: string | null;
+  prefix: string;
+}
 
 const Index = () => {
+  // Game state
+  const [words, setWords] = useState<Word[]>([]);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [gameComplete, setGameComplete] = useState(false);
+  const [score, setScore] = useState(0);
+  const [stars, setStars] = useState(0);
+  const [timer, setTimer] = useState(0);
+  const [bestTime, setBestTime] = useState<number | null>(null);
+  const timerRef = useRef<number | null>(null);
+  
+  // Sound references
+  const dragSoundRef = useRef<HTMLAudioElement | null>(null);
+  const dropSoundRef = useRef<HTMLAudioElement | null>(null);
+  const correctSoundRef = useRef<HTMLAudioElement | null>(null);
+  const wrongSoundRef = useRef<HTMLAudioElement | null>(null);
+  const starSoundRef = useRef<HTMLAudioElement | null>(null);
+  const successSoundRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Game container ref for animations
+  const gameContainerRef = useRef<HTMLDivElement>(null);
+  const starsContainerRef = useRef<HTMLDivElement>(null);
+
+  // Initialize game
+  useEffect(() => {
+    // Create audio elements
+    dragSoundRef.current = new Audio("/sounds/drag.mp3");
+    dropSoundRef.current = new Audio("/sounds/drop.mp3");
+    correctSoundRef.current = new Audio("/sounds/correct.mp3");
+    wrongSoundRef.current = new Audio("/sounds/wrong.mp3");
+    starSoundRef.current = new Audio("/sounds/star.mp3");
+    successSoundRef.current = new Audio("/sounds/success.mp3");
+    
+    // Preload audio
+    const audios = [
+      dragSoundRef.current,
+      dropSoundRef.current,
+      correctSoundRef.current,
+      wrongSoundRef.current,
+      starSoundRef.current,
+      successSoundRef.current
+    ];
+    
+    audios.forEach(audio => {
+      if (audio) {
+        audio.load();
+      }
+    });
+    
+    // Check for best time in local storage
+    const storedBestTime = localStorage.getItem("dragGame_bestTime");
+    if (storedBestTime) {
+      setBestTime(parseInt(storedBestTime));
+    }
+    
+    // Initial animation
+    if (gameContainerRef.current) {
+      gsap.from(gameContainerRef.current, {
+        y: 30,
+        opacity: 0,
+        duration: 1,
+        ease: "power3.out"
+      });
+    }
+
+    return () => {
+      // Clean up timer
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+
+  // Reset game
+  const resetGame = () => {
+    // Initial words in shuffled order
+    const initialWords: Word[] = [
+      { id: "word-1", content: "felino", correctSlot: "slot-1" },
+      { id: "word-2", content: "canino", correctSlot: "slot-2" },
+      { id: "word-3", content: "equino", correctSlot: "slot-3" }
+    ];
+    
+    // Shuffle words
+    const shuffledWords = [...initialWords]
+      .sort(() => Math.random() - 0.5);
+    
+    // Empty slots
+    const initialSlots: Slot[] = [
+      { id: "slot-1", content: null, prefix: "Gato é " },
+      { id: "slot-2", content: null, prefix: "Cachorro é " },
+      { id: "slot-3", content: null, prefix: "Cavalo é " }
+    ];
+    
+    setWords(shuffledWords);
+    setSlots(initialSlots);
+    setGameComplete(false);
+    setStars(0);
+    setScore(0);
+    setTimer(0);
+    
+    // Start timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+    
+    timerRef.current = window.setInterval(() => {
+      setTimer(prev => prev + 1);
+    }, 1000);
+
+    // Animate words
+    setTimeout(() => {
+      gsap.fromTo(".word-item", 
+        { scale: 0, opacity: 0 },
+        { 
+          scale: 1, 
+          opacity: 1, 
+          duration: 0.5, 
+          stagger: 0.2,
+          ease: "back.out(1.7)"
+        }
+      );
+    }, 200);
+  };
+
+  // Start game
+  const startGame = () => {
+    setGameStarted(true);
+    resetGame();
+    
+    // Entrance animation
+    gsap.to(".game-title", {
+      y: -20,
+      scale: 0.8,
+      duration: 0.5,
+      ease: "back.in"
+    });
+  };
+
+  // Handle drag start
+  const handleDragStart = () => {
+    if (dragSoundRef.current) {
+      dragSoundRef.current.currentTime = 0;
+      dragSoundRef.current.play();
+    }
+  };
+
+  // Handle drag end - Main game logic
+  const handleDragEnd = (result: any) => {
+    const { source, destination } = result;
+    
+    // Dropped outside a droppable area
+    if (!destination) return;
+    
+    // Play drop sound
+    if (dropSoundRef.current) {
+      dropSoundRef.current.currentTime = 0;
+      dropSoundRef.current.play();
+    }
+    
+    // Dropped in words area - rearranging words
+    if (source.droppableId === "words" && destination.droppableId === "words") {
+      const newWords = [...words];
+      const [movedWord] = newWords.splice(source.index, 1);
+      newWords.splice(destination.index, 0, movedWord);
+      setWords(newWords);
+      return;
+    }
+    
+    // Moving from words to slot
+    if (source.droppableId === "words" && destination.droppableId.startsWith("slot")) {
+      const wordIndex = source.index;
+      const slotId = destination.droppableId;
+      
+      // Get the dragged word
+      const draggedWord = words[wordIndex];
+      
+      // Check if slot is already filled
+      const targetSlotIndex = slots.findIndex(slot => slot.id === slotId);
+      if (slots[targetSlotIndex].content !== null) {
+        // Slot already has content, don't allow
+        if (wrongSoundRef.current) {
+          wrongSoundRef.current.currentTime = 0;
+          wrongSoundRef.current.play();
+        }
+        
+        // Shake animation to indicate slot is filled
+        gsap.to(`#${slotId}`, {
+          x: [-5, 5, -3, 3, 0],
+          duration: 0.4,
+          ease: "power2.inOut"
+        });
+        
+        return;
+      }
+      
+      // Check if word is dropped in correct slot
+      const isCorrect = draggedWord.correctSlot === slotId;
+      
+      // Update slots
+      const updatedSlots = [...slots];
+      updatedSlots[targetSlotIndex] = {
+        ...updatedSlots[targetSlotIndex],
+        content: draggedWord.content
+      };
+      
+      // Remove word from available words
+      const updatedWords = words.filter((_, index) => index !== wordIndex);
+      
+      setSlots(updatedSlots);
+      setWords(updatedWords);
+      
+      // Correct placement animation and sound
+      if (isCorrect) {
+        if (correctSoundRef.current) {
+          correctSoundRef.current.currentTime = 0;
+          correctSoundRef.current.play();
+        }
+        
+        // Celebrate with animation
+        gsap.to(`#${slotId} .slot-content`, {
+          scale: 1.2,
+          duration: 0.3,
+          yoyo: true,
+          repeat: 1,
+          ease: "elastic.out(1, 0.3)",
+          onComplete: () => {
+            // Check stars to award
+            const correctCount = updatedSlots.filter(
+              (slot, idx) => slot.content && slot.id === `slot-${idx + 1}`
+            ).length;
+            
+            if (correctCount > stars) {
+              addStar();
+            }
+            
+            // Check if game is complete
+            if (correctCount === 3) {
+              completeGame();
+            }
+          }
+        });
+      } else {
+        if (wrongSoundRef.current) {
+          wrongSoundRef.current.currentTime = 0;
+          wrongSoundRef.current.play();
+        }
+        
+        // Wrong placement animation
+        gsap.to(`#${slotId} .slot-content`, {
+          x: [-5, 5, -3, 3, 0],
+          duration: 0.4,
+          ease: "power2.inOut"
+        });
+      }
+    }
+    
+    // Moving from slot back to words (removed for simplicity in this implementation)
+  };
+
+  // Add a star with animation
+  const addStar = () => {
+    const newStars = stars + 1;
+    setStars(newStars);
+    
+    // Play star sound
+    if (starSoundRef.current) {
+      starSoundRef.current.currentTime = 0;
+      starSoundRef.current.play();
+    }
+    
+    // Create and animate a new star
+    if (starsContainerRef.current) {
+      const starElement = document.createElement("div");
+      starElement.className = "absolute star-animation";
+      starElement.innerHTML = "⭐";
+      starsContainerRef.current.appendChild(starElement);
+      
+      // Position star randomly
+      const xPos = Math.random() * 80 + 10; // 10-90% width
+      starElement.style.left = `${xPos}%`;
+      
+      // Animate star
+      gsap.fromTo(starElement, 
+        { 
+          y: 100, 
+          scale: 0,
+          opacity: 0,
+          rotation: -90
+        },
+        { 
+          y: 0, 
+          scale: 1,
+          opacity: 1,
+          rotation: 0,
+          duration: 1,
+          ease: "elastic.out(1, 0.3)",
+          onComplete: () => {
+            gsap.to(starElement, {
+              y: -20,
+              scale: 1.5,
+              opacity: 0,
+              duration: 0.5,
+              delay: 1,
+              onComplete: () => {
+                if (starsContainerRef.current?.contains(starElement)) {
+                  starsContainerRef.current.removeChild(starElement);
+                }
+              }
+            });
+          }
+        }
+      );
+    }
+  };
+
+  // Complete game
+  const completeGame = () => {
+    setGameComplete(true);
+    
+    // Stop timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    // Calculate score - base 1000 points minus time penalty
+    const timeScore = Math.max(1000 - (timer * 10), 100);
+    const starBonus = stars * 300;
+    const totalScore = timeScore + starBonus;
+    
+    setScore(totalScore);
+    
+    // Update best time if needed
+    if (bestTime === null || timer < bestTime) {
+      setBestTime(timer);
+      localStorage.setItem("dragGame_bestTime", timer.toString());
+    }
+    
+    // Play success sound
+    if (successSoundRef.current) {
+      successSoundRef.current.currentTime = 0;
+      successSoundRef.current.play();
+    }
+    
+    // Success animation
+    gsap.to(".completion-message", {
+      scale: 1,
+      opacity: 1,
+      duration: 0.8,
+      ease: "elastic.out(1, 0.3)"
+    });
+    
+    // Show toast notification
+    toast.success("Parabéns! Você completou o jogo!", {
+      description: `Pontuação: ${totalScore} pontos`
+    });
+  };
+
+  // Format time as MM:SS
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-gray-600">Start building your amazing project here!</p>
+    <div 
+      className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-amber-50 to-amber-100 p-4"
+      ref={gameContainerRef}
+    >
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 md:p-8 relative overflow-hidden">
+        {/* Stars container for animations */}
+        <div 
+          ref={starsContainerRef} 
+          className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
+        ></div>
+        
+        {/* Game title */}
+        <h1 className="game-title text-3xl md:text-4xl font-bold text-center mb-8 text-amber-800">
+          Jogo das Palavras
+        </h1>
+        
+        {!gameStarted ? (
+          // Start screen
+          <div className="flex flex-col items-center space-y-6">
+            <p className="text-center text-gray-700 mb-6">
+              Arraste as palavras para completar as frases corretamente!
+            </p>
+            
+            <Button 
+              onClick={startGame}
+              className="bg-amber-500 hover:bg-amber-600 text-white px-8 py-6 rounded-full text-lg font-medium shadow-lg transition-all hover:shadow-xl hover:scale-105"
+            >
+              Começar Jogo
+            </Button>
+            
+            {bestTime !== null && (
+              <p className="text-sm text-gray-600 mt-2">
+                Melhor tempo: {formatTime(bestTime)}
+              </p>
+            )}
+          </div>
+        ) : (
+          // Game screen
+          <div className="relative">
+            {/* Timer display */}
+            <div className="absolute top-0 right-0 bg-amber-100 px-3 py-1 rounded-lg text-amber-800 font-medium">
+              {formatTime(timer)}
+            </div>
+            
+            {/* Stars display */}
+            <div className="absolute top-0 left-0 flex">
+              {[...Array(3)].map((_, index) => (
+                <span key={index} className="text-2xl transition-all duration-500 transform">
+                  {index < stars ? "⭐" : "☆"}
+                </span>
+              ))}
+            </div>
+            
+            <DragDropContext 
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
+              {/* Slots for dropping words */}
+              <div className="mb-12 space-y-4 mt-12">
+                {slots.map((slot) => (
+                  <div key={slot.id} className="relative">
+                    <Droppable droppableId={slot.id}>
+                      {(provided, snapshot) => (
+                        <div
+                          {...provided.droppableProps}
+                          ref={provided.innerRef}
+                          id={slot.id}
+                          className={`
+                            flex items-center p-4 rounded-lg transition-all
+                            ${snapshot.isDraggingOver ? 'bg-amber-100' : 'bg-amber-50'}
+                            ${slot.content ? 'border-2 border-amber-400' : 'border-2 border-amber-200 border-dashed'}
+                          `}
+                        >
+                          <span className="text-gray-800 font-medium mr-2">{slot.prefix}</span>
+                          
+                          {slot.content ? (
+                            <div className="slot-content bg-amber-400 text-white px-4 py-2 rounded-lg font-medium">
+                              {slot.content}
+                            </div>
+                          ) : (
+                            <div className="h-10 w-24 bg-amber-100 rounded-lg border-2 border-amber-200 border-dashed"></div>
+                          )}
+                          
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Words to drag */}
+              {!gameComplete && (
+                <Droppable droppableId="words" direction="horizontal">
+                  {(provided, snapshot) => (
+                    <div
+                      {...provided.droppableProps}
+                      ref={provided.innerRef}
+                      className={`
+                        flex flex-wrap justify-center gap-4 p-4 rounded-lg min-h-16
+                        ${snapshot.isDraggingOver ? 'bg-amber-100' : 'bg-amber-50'}
+                      `}
+                    >
+                      {words.map((word, index) => (
+                        <Draggable key={word.id} draggableId={word.id} index={index}>
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              className={`
+                                word-item bg-amber-500 text-white px-4 py-2 rounded-lg font-medium shadow-sm
+                                ${snapshot.isDragging ? 'shadow-lg scale-105' : ''}
+                                cursor-grab active:cursor-grabbing transition-all
+                              `}
+                              style={{
+                                ...provided.draggableProps.style,
+                                transform: snapshot.isDragging 
+                                  ? `${provided.draggableProps.style?.transform} scale(1.05)`
+                                  : provided.draggableProps.style?.transform
+                              }}
+                            >
+                              {word.content}
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              )}
+            </DragDropContext>
+            
+            {/* Game completion message */}
+            {gameComplete && (
+              <div className="completion-message mt-6 text-center scale-0 opacity-0">
+                <h2 className="text-2xl font-bold text-amber-800 mb-2">Parabéns!</h2>
+                <p className="text-gray-700 mb-4">Você completou o jogo!</p>
+                
+                <div className="bg-amber-50 p-4 rounded-lg mb-6">
+                  <div className="flex justify-between mb-2">
+                    <span>Tempo:</span>
+                    <span>{formatTime(timer)}</span>
+                  </div>
+                  <div className="flex justify-between mb-2">
+                    <span>Estrelas:</span>
+                    <span>{stars}/3</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-amber-800">
+                    <span>Pontuação total:</span>
+                    <span>{score}</span>
+                  </div>
+                </div>
+                
+                <Button
+                  onClick={resetGame}
+                  className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2 rounded-full font-medium transition-all hover:scale-105"
+                >
+                  Jogar Novamente
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      
+      {/* Instructions */}
+      <div className="mt-8 text-center text-sm text-gray-600 max-w-md">
+        <p>Arraste as palavras para completar as frases corretamente.</p>
+        <p>Complete todas as frases para ganhar todas as estrelas!</p>
       </div>
     </div>
   );
