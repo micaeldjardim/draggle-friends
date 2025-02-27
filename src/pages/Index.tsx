@@ -198,6 +198,13 @@ const Index = () => {
     }
   };
 
+  // Initial words (for reference in handleDoubleClick and elsewhere)
+  const initialWords: Word[] = [
+    { id: "word-1", content: "felino", correctSlot: "slot-1" },
+    { id: "word-2", content: "canino", correctSlot: "slot-2" },
+    { id: "word-3", content: "equino", correctSlot: "slot-3" }
+  ];
+
   // Handle drag end - Main game logic
   const handleDragEnd = (result: any) => {
     const { source, destination } = result;
@@ -239,7 +246,7 @@ const Index = () => {
         
         // Shake animation to indicate slot is filled
         gsap.to(`#${slotId}`, {
-          x: [-5, 5, -3, 3, 0] as any,
+          x: [-5, 5, -3, 3, 0],
           duration: 0.4,
           ease: "power2.inOut"
         });
@@ -263,57 +270,58 @@ const Index = () => {
       setSlots(updatedSlots);
       setWords(updatedWords);
       
-      // Correct placement animation and sound
-      if (isCorrect) {
-        if (correctSoundRef.current) {
-          correctSoundRef.current.currentTime = 0;
-          correctSoundRef.current.play().catch(e => console.error("Audio play error:", e));
-        }
-        
-        // Celebrate with animation
-        gsap.to(`#${slotId} .word-content`, {
-          scale: 1.2,
-          duration: 0.3,
-          yoyo: true,
-          repeat: 1,
-          ease: "elastic.out(1, 0.3)",
-          onComplete: () => {
-            // Check stars to award
-            const correctCount = updatedSlots.filter(
-              (slot, idx) => {
-                const slotId = `slot-${idx + 1}`;
-                const correctWord = initialWords.find(word => word.correctSlot === slotId);
-                return slot.content && correctWord && slot.content === correctWord.content;
-              }
-            ).length;
-            
-            if (correctCount > stars) {
-              addStar();
+      // Fixed: we need to wait for the DOM to update before applying animations
+      setTimeout(() => {
+        const wordElement = document.querySelector(`#${slotId} .word-content`);
+        if (wordElement) {
+          // Correct placement animation and sound
+          if (isCorrect) {
+            if (correctSoundRef.current) {
+              correctSoundRef.current.currentTime = 0;
+              correctSoundRef.current.play().catch(e => console.error("Audio play error:", e));
             }
+            
+            // Celebrate with animation
+            gsap.to(wordElement, {
+              scale: 1.2,
+              duration: 0.3,
+              yoyo: true,
+              repeat: 1,
+              ease: "elastic.out(1, 0.3)",
+              onComplete: () => {
+                // Check stars to award - Only if game is in progress (not on start screen)
+                if (gameStarted && !showResults) {
+                  const correctCount = updatedSlots.filter(
+                    (slot, idx) => {
+                      const slotId = `slot-${idx + 1}`;
+                      const correctWord = initialWords.find(word => word.correctSlot === slotId);
+                      return slot.content && correctWord && slot.content === correctWord.content;
+                    }
+                  ).length;
+                  
+                  if (correctCount > stars) {
+                    addStar();
+                  }
+                }
+              }
+            });
+          } else {
+            if (wrongSoundRef.current) {
+              wrongSoundRef.current.currentTime = 0;
+              wrongSoundRef.current.play().catch(e => console.error("Audio play error:", e));
+            }
+            
+            // Wrong placement animation
+            gsap.to(wordElement, {
+              x: [-5, 5, -3, 3, 0],
+              duration: 0.4,
+              ease: "power2.inOut"
+            });
           }
-        });
-      } else {
-        if (wrongSoundRef.current) {
-          wrongSoundRef.current.currentTime = 0;
-          wrongSoundRef.current.play().catch(e => console.error("Audio play error:", e));
         }
-        
-        // Wrong placement animation
-        gsap.to(`#${slotId} .word-content`, {
-          x: [-5, 5, -3, 3, 0] as any,
-          duration: 0.4,
-          ease: "power2.inOut"
-        });
-      }
+      }, 50); // Short delay to ensure DOM has updated
     }
   };
-
-  // Initial words (for reference in handleDoubleClick and elsewhere)
-  const initialWords: Word[] = [
-    { id: "word-1", content: "felino", correctSlot: "slot-1" },
-    { id: "word-2", content: "canino", correctSlot: "slot-2" },
-    { id: "word-3", content: "equino", correctSlot: "slot-3" }
-  ];
 
   // Handle double click on a filled slot to return the word
   const handleDoubleClick = (slotId: string) => {
@@ -369,6 +377,9 @@ const Index = () => {
 
   // Add a star with animation
   const addStar = () => {
+    // Only add stars during gameplay, not on start screen
+    if (!gameStarted || showResults) return;
+    
     const newStars = stars + 1;
     setStars(newStars);
     
@@ -747,10 +758,7 @@ const Index = () => {
                                 cursor-grab active:cursor-grabbing transition-all
                               `}
                               style={{
-                                ...provided.draggableProps.style,
-                                transform: snapshot.isDragging 
-                                  ? `${provided.draggableProps.style?.transform} scale(1.05)`
-                                  : provided.draggableProps.style?.transform
+                                ...provided.draggableProps.style
                               }}
                             >
                               {word.content}
