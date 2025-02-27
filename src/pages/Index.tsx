@@ -246,7 +246,7 @@ const Index = () => {
         
         // Shake animation to indicate slot is filled
         gsap.to(`#${slotId}`, {
-          x: [-5, 5, -3, 3, 0],
+          x: "-5px, 5px, -3px, 3px, 0px", // Fix: Changed from array to string with units
           duration: 0.4,
           ease: "power2.inOut"
         });
@@ -313,7 +313,7 @@ const Index = () => {
             
             // Wrong placement animation
             gsap.to(wordElement, {
-              x: [-5, 5, -3, 3, 0],
+              x: "random([0, -5px, 5px, -3px, 3px])", // Fix: Changed from array to string with units and GSAP's random function
               duration: 0.4,
               ease: "power2.inOut"
             });
