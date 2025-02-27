@@ -166,7 +166,7 @@ const Index = () => {
   const handleDragStart = () => {
     if (dragSoundRef.current) {
       dragSoundRef.current.currentTime = 0;
-      dragSoundRef.current.play();
+      dragSoundRef.current.play().catch(e => console.error("Audio play error:", e));
     }
   };
 
@@ -180,7 +180,7 @@ const Index = () => {
     // Play drop sound
     if (dropSoundRef.current) {
       dropSoundRef.current.currentTime = 0;
-      dropSoundRef.current.play();
+      dropSoundRef.current.play().catch(e => console.error("Audio play error:", e));
     }
     
     // Dropped in words area - rearranging words
@@ -206,12 +206,12 @@ const Index = () => {
         // Slot already has content, don't allow
         if (wrongSoundRef.current) {
           wrongSoundRef.current.currentTime = 0;
-          wrongSoundRef.current.play();
+          wrongSoundRef.current.play().catch(e => console.error("Audio play error:", e));
         }
         
         // Shake animation to indicate slot is filled
         gsap.to(`#${slotId}`, {
-          x: [0, -5, 5, -3, 3, 0],
+          x: [-5, 5, -3, 3, 0],
           duration: 0.4,
           ease: "power2.inOut"
         });
@@ -239,11 +239,11 @@ const Index = () => {
       if (isCorrect) {
         if (correctSoundRef.current) {
           correctSoundRef.current.currentTime = 0;
-          correctSoundRef.current.play();
+          correctSoundRef.current.play().catch(e => console.error("Audio play error:", e));
         }
         
         // Celebrate with animation
-        gsap.to(`#${slotId} .slot-content`, {
+        gsap.to(`#${slotId} .word-content`, {
           scale: 1.2,
           duration: 0.3,
           yoyo: true,
@@ -263,15 +263,71 @@ const Index = () => {
       } else {
         if (wrongSoundRef.current) {
           wrongSoundRef.current.currentTime = 0;
-          wrongSoundRef.current.play();
+          wrongSoundRef.current.play().catch(e => console.error("Audio play error:", e));
         }
         
         // Wrong placement animation
-        gsap.to(`#${slotId} .slot-content`, {
-          x: [0, -5, 5, -3, 3, 0],
+        gsap.to(`#${slotId} .word-content`, {
+          x: [-5, 5, -3, 3, 0],
           duration: 0.4,
           ease: "power2.inOut"
         });
+      }
+    }
+  };
+
+  // Handle double click on a filled slot to return the word
+  const handleDoubleClick = (slotId: string) => {
+    const slotIndex = slots.findIndex(slot => slot.id === slotId);
+    
+    // Only if slot has content
+    if (slots[slotIndex].content) {
+      // Get the content before we clear it
+      const wordContent = slots[slotIndex].content;
+      
+      // Find the word's original details
+      const originalWord = [
+        { id: "word-1", content: "felino", correctSlot: "slot-1" },
+        { id: "word-2", content: "canino", correctSlot: "slot-2" },
+        { id: "word-3", content: "equino", correctSlot: "slot-3" }
+      ].find(w => w.content === wordContent);
+      
+      if (originalWord) {
+        // Update slots
+        const updatedSlots = [...slots];
+        updatedSlots[slotIndex] = {
+          ...updatedSlots[slotIndex],
+          content: null
+        };
+        
+        // Add word back to words list
+        const updatedWords = [...words, originalWord];
+        
+        // Shuffle words again
+        const shuffledWords = [...updatedWords].sort(() => Math.random() - 0.5);
+        
+        // Play sound effect
+        if (dragSoundRef.current) {
+          dragSoundRef.current.currentTime = 0;
+          dragSoundRef.current.play().catch(e => console.error("Audio play error:", e));
+        }
+        
+        // Update state
+        setSlots(updatedSlots);
+        setWords(shuffledWords);
+        
+        // Play animation for the returned word
+        setTimeout(() => {
+          gsap.fromTo(".word-item:last-child", 
+            { scale: 0, opacity: 0 },
+            { 
+              scale: 1, 
+              opacity: 1, 
+              duration: 0.5,
+              ease: "back.out(1.7)"
+            }
+          );
+        }, 100);
       }
     }
   };
@@ -284,7 +340,7 @@ const Index = () => {
     // Play star sound
     if (starSoundRef.current) {
       starSoundRef.current.currentTime = 0;
-      starSoundRef.current.play();
+      starSoundRef.current.play().catch(e => console.error("Audio play error:", e));
     }
     
     // Create and animate a new star
@@ -341,6 +397,12 @@ const Index = () => {
       toast.error("Preencha todas as frases antes de submeter!", {
         description: "Arraste as palavras para completar todas as frases."
       });
+      
+      // Play wrong sound
+      if (wrongSoundRef.current) {
+        wrongSoundRef.current.currentTime = 0;
+        wrongSoundRef.current.play().catch(e => console.error("Audio play error:", e));
+      }
       return;
     }
     
@@ -380,7 +442,7 @@ const Index = () => {
     // Play success sound
     if (successSoundRef.current) {
       successSoundRef.current.currentTime = 0;
-      successSoundRef.current.play();
+      successSoundRef.current.play().catch(e => console.error("Audio play error:", e));
     }
     
     // Trigger confetti if score is good
@@ -593,11 +655,12 @@ const Index = () => {
                             ${snapshot.isDraggingOver ? 'bg-blue-100' : 'bg-blue-50'}
                             ${slot.content ? 'border-2 border-blue-400' : 'border-2 border-blue-200 border-dashed'}
                           `}
+                          onDoubleClick={() => handleDoubleClick(slot.id)}
                         >
                           <span className="text-gray-800 font-medium mr-2">{slot.prefix}</span>
                           
                           {slot.content ? (
-                            <div className="slot-content bg-blue-600 text-white px-4 py-2 rounded-lg font-medium">
+                            <div className="word-content bg-blue-600 text-white px-4 py-2 rounded-lg font-medium cursor-pointer" title="Duplo clique para remover">
                               {slot.content}
                             </div>
                           ) : (
@@ -667,6 +730,7 @@ const Index = () => {
             {/* Instructions */}
             <div className="mt-6 text-center text-sm text-gray-600">
               <p>Arraste as palavras para completar as frases e clique em "Submeter".</p>
+              <p className="mt-1 italic">Dica: Você pode dar um duplo clique nas palavras já colocadas para retirá-las.</p>
             </div>
           </div>
         )}
