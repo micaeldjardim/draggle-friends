@@ -4,6 +4,8 @@ import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import gsap from "gsap";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import confetti from 'canvas-confetti';
+import { Award, Star, Check, ThumbsUp } from "lucide-react";
 
 // Define game data types
 interface Word {
@@ -24,6 +26,7 @@ const Index = () => {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [gameStarted, setGameStarted] = useState(false);
   const [gameComplete, setGameComplete] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const [score, setScore] = useState(0);
   const [stars, setStars] = useState(0);
   const [timer, setTimer] = useState(0);
@@ -41,6 +44,7 @@ const Index = () => {
   // Game container ref for animations
   const gameContainerRef = useRef<HTMLDivElement>(null);
   const starsContainerRef = useRef<HTMLDivElement>(null);
+  const resultContainerRef = useRef<HTMLDivElement>(null);
 
   // Initialize game
   useEffect(() => {
@@ -115,6 +119,7 @@ const Index = () => {
     setWords(shuffledWords);
     setSlots(initialSlots);
     setGameComplete(false);
+    setShowResults(false);
     setStars(0);
     setScore(0);
     setTimer(0);
@@ -206,7 +211,7 @@ const Index = () => {
         
         // Shake animation to indicate slot is filled
         gsap.to(`#${slotId}`, {
-          x: [-5, 5, -3, 3, 0],
+          x: [0, -5, 5, -3, 3, 0],
           duration: 0.4,
           ease: "power2.inOut"
         });
@@ -253,11 +258,6 @@ const Index = () => {
             if (correctCount > stars) {
               addStar();
             }
-            
-            // Check if game is complete
-            if (correctCount === 3) {
-              completeGame();
-            }
           }
         });
       } else {
@@ -268,14 +268,12 @@ const Index = () => {
         
         // Wrong placement animation
         gsap.to(`#${slotId} .slot-content`, {
-          x: [-5, 5, -3, 3, 0],
+          x: [0, -5, 5, -3, 3, 0],
           duration: 0.4,
           ease: "power2.inOut"
         });
       }
     }
-    
-    // Moving from slot back to words (removed for simplicity in this implementation)
   };
 
   // Add a star with animation
@@ -334,9 +332,17 @@ const Index = () => {
     }
   };
 
-  // Complete game
-  const completeGame = () => {
-    setGameComplete(true);
+  // Submit answers and show results
+  const handleSubmit = () => {
+    // Check if all slots are filled
+    const allSlotsFilled = slots.every(slot => slot.content !== null);
+    
+    if (!allSlotsFilled) {
+      toast.error("Preencha todas as frases antes de submeter!", {
+        description: "Arraste as palavras para completar todas as frases."
+      });
+      return;
+    }
     
     // Stop timer
     if (timerRef.current) {
@@ -344,18 +350,32 @@ const Index = () => {
       timerRef.current = null;
     }
     
-    // Calculate score - base 1000 points minus time penalty
-    const timeScore = Math.max(1000 - (timer * 10), 100);
-    const starBonus = stars * 300;
-    const totalScore = timeScore + starBonus;
+    // Calculate score based on correct placements
+    const correctPlacements = slots.filter(
+      (slot, idx) => slot.content && slot.id === `slot-${idx + 1}`
+    ).length;
     
-    setScore(totalScore);
+    // Calculate time bonus
+    const timeBonus = Math.max(1000 - (timer * 10), 100);
+    
+    // Calculate star count
+    const earnedStars = Math.min(Math.ceil((correctPlacements / 3) * 3), 3);
+    
+    // Calculate final score
+    const finalScore = (correctPlacements * 300) + timeBonus;
+    
+    setStars(earnedStars);
+    setScore(finalScore);
+    setGameComplete(true);
     
     // Update best time if needed
-    if (bestTime === null || timer < bestTime) {
+    if (correctPlacements === 3 && (bestTime === null || timer < bestTime)) {
       setBestTime(timer);
       localStorage.setItem("dragGame_bestTime", timer.toString());
     }
+    
+    // Show results screen
+    setShowResults(true);
     
     // Play success sound
     if (successSoundRef.current) {
@@ -363,18 +383,66 @@ const Index = () => {
       successSoundRef.current.play();
     }
     
-    // Success animation
-    gsap.to(".completion-message", {
-      scale: 1,
-      opacity: 1,
-      duration: 0.8,
-      ease: "elastic.out(1, 0.3)"
-    });
+    // Trigger confetti if score is good
+    if (earnedStars >= 2) {
+      setTimeout(() => {
+        const count = 200;
+        const defaults = {
+          origin: { y: 0.7 },
+          zIndex: 5000
+        };
+
+        function fire(particleRatio: number, opts: any) {
+          confetti({
+            ...defaults,
+            ...opts,
+            particleCount: Math.floor(count * particleRatio)
+          });
+        }
+
+        fire(0.25, {
+          spread: 26,
+          startVelocity: 55,
+        });
+
+        fire(0.2, {
+          spread: 60,
+        });
+
+        fire(0.35, {
+          spread: 100,
+          decay: 0.91,
+          scalar: 0.8
+        });
+
+        fire(0.1, {
+          spread: 120,
+          startVelocity: 25,
+          decay: 0.92,
+          scalar: 1.2
+        });
+
+        fire(0.1, {
+          spread: 120,
+          startVelocity: 45,
+        });
+      }, 500);
+    }
     
-    // Show toast notification
-    toast.success("Parabéns! Você completou o jogo!", {
-      description: `Pontuação: ${totalScore} pontos`
-    });
+    // Animate results container
+    setTimeout(() => {
+      if (resultContainerRef.current) {
+        gsap.fromTo(resultContainerRef.current,
+          { scale: 0.8, opacity: 0 },
+          { 
+            scale: 1, 
+            opacity: 1, 
+            duration: 0.8,
+            ease: "elastic.out(1, 0.3)"
+          }
+        );
+      }
+    }, 100);
   };
 
   // Format time as MM:SS
@@ -386,7 +454,7 @@ const Index = () => {
 
   return (
     <div 
-      className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-amber-50 to-amber-100 p-4"
+      className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-blue-50 to-blue-100 p-4"
       ref={gameContainerRef}
     >
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 md:p-8 relative overflow-hidden">
@@ -397,20 +465,25 @@ const Index = () => {
         ></div>
         
         {/* Game title */}
-        <h1 className="game-title text-3xl md:text-4xl font-bold text-center mb-8 text-amber-800">
-          Jogo das Palavras
+        <h1 className="game-title text-3xl md:text-4xl font-bold text-center mb-8 text-blue-700">
+          English Word Match
         </h1>
         
         {!gameStarted ? (
           // Start screen
           <div className="flex flex-col items-center space-y-6">
-            <p className="text-center text-gray-700 mb-6">
-              Arraste as palavras para completar as frases corretamente!
-            </p>
+            <div className="text-center mb-6">
+              <p className="text-gray-700 mb-4">
+                Arraste as palavras para completar as frases corretamente!
+              </p>
+              <p className="text-blue-600 font-medium">
+                Complete todas as frases para ganhar todas as estrelas!
+              </p>
+            </div>
             
             <Button 
               onClick={startGame}
-              className="bg-amber-500 hover:bg-amber-600 text-white px-8 py-6 rounded-full text-lg font-medium shadow-lg transition-all hover:shadow-xl hover:scale-105"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 rounded-full text-lg font-medium shadow-lg transition-all hover:shadow-xl hover:scale-105"
             >
               Começar Jogo
             </Button>
@@ -421,11 +494,74 @@ const Index = () => {
               </p>
             )}
           </div>
+        ) : showResults ? (
+          // Results screen
+          <div 
+            ref={resultContainerRef}
+            className="flex flex-col items-center justify-center space-y-8 p-4"
+          >
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-blue-700 mb-2 flex items-center justify-center">
+                <Award className="w-8 h-8 mr-2 text-yellow-500" />
+                Seus Resultados
+              </h2>
+              
+              <p className="text-gray-600 mb-6">
+                {stars === 3 ? "Parabéns! Você acertou tudo!" : 
+                 stars === 2 ? "Muito bom! Você está quase lá!" : 
+                 "Continue praticando para melhorar!"}
+              </p>
+            </div>
+            
+            <div className="flex justify-center mb-6">
+              {[...Array(3)].map((_, index) => (
+                <div key={index} className={`transition-all duration-300 transform ${index < stars ? "scale-110" : "opacity-40"}`}>
+                  <Star 
+                    className={`w-12 h-12 ${index < stars ? "text-yellow-500 fill-yellow-500" : "text-gray-300"}`} 
+                  />
+                </div>
+              ))}
+            </div>
+            
+            <div className="bg-blue-50 p-6 rounded-xl w-full max-w-md">
+              <div className="flex justify-between items-center mb-4 pb-4 border-b border-blue-100">
+                <span className="text-gray-700">Tempo:</span>
+                <span className="font-medium text-blue-700">{formatTime(timer)}</span>
+              </div>
+              
+              <div className="flex justify-between items-center mb-4 pb-4 border-b border-blue-100">
+                <span className="text-gray-700">Estrelas:</span>
+                <span className="font-medium text-blue-700">{stars}/3</span>
+              </div>
+              
+              <div className="flex justify-between items-center text-lg font-bold">
+                <span className="text-gray-800">Pontuação:</span>
+                <span className="text-blue-700">{score} pontos</span>
+              </div>
+            </div>
+            
+            <div className="flex gap-4 mt-6">
+              <Button
+                onClick={resetGame}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium transition-all hover:scale-105"
+              >
+                Jogar Novamente
+              </Button>
+              
+              <Button
+                onClick={() => setGameStarted(false)}
+                variant="outline"
+                className="border-blue-300 text-blue-700 hover:bg-blue-50 px-6 py-2 rounded-full font-medium transition-all"
+              >
+                Menu Principal
+              </Button>
+            </div>
+          </div>
         ) : (
           // Game screen
           <div className="relative">
             {/* Timer display */}
-            <div className="absolute top-0 right-0 bg-amber-100 px-3 py-1 rounded-lg text-amber-800 font-medium">
+            <div className="absolute top-0 right-0 bg-blue-100 px-3 py-1 rounded-lg text-blue-800 font-medium">
               {formatTime(timer)}
             </div>
             
@@ -443,7 +579,7 @@ const Index = () => {
               onDragEnd={handleDragEnd}
             >
               {/* Slots for dropping words */}
-              <div className="mb-12 space-y-4 mt-12">
+              <div className="mb-8 space-y-4 mt-12">
                 {slots.map((slot) => (
                   <div key={slot.id} className="relative">
                     <Droppable droppableId={slot.id}>
@@ -454,18 +590,18 @@ const Index = () => {
                           id={slot.id}
                           className={`
                             flex items-center p-4 rounded-lg transition-all
-                            ${snapshot.isDraggingOver ? 'bg-amber-100' : 'bg-amber-50'}
-                            ${slot.content ? 'border-2 border-amber-400' : 'border-2 border-amber-200 border-dashed'}
+                            ${snapshot.isDraggingOver ? 'bg-blue-100' : 'bg-blue-50'}
+                            ${slot.content ? 'border-2 border-blue-400' : 'border-2 border-blue-200 border-dashed'}
                           `}
                         >
                           <span className="text-gray-800 font-medium mr-2">{slot.prefix}</span>
                           
                           {slot.content ? (
-                            <div className="slot-content bg-amber-400 text-white px-4 py-2 rounded-lg font-medium">
+                            <div className="slot-content bg-blue-600 text-white px-4 py-2 rounded-lg font-medium">
                               {slot.content}
                             </div>
                           ) : (
-                            <div className="h-10 w-24 bg-amber-100 rounded-lg border-2 border-amber-200 border-dashed"></div>
+                            <div className="h-10 w-24 bg-blue-100 rounded-lg border-2 border-blue-200 border-dashed"></div>
                           )}
                           
                           {provided.placeholder}
@@ -477,85 +613,63 @@ const Index = () => {
               </div>
               
               {/* Words to drag */}
-              {!gameComplete && (
-                <Droppable droppableId="words" direction="horizontal">
-                  {(provided, snapshot) => (
-                    <div
-                      {...provided.droppableProps}
-                      ref={provided.innerRef}
-                      className={`
-                        flex flex-wrap justify-center gap-4 p-4 rounded-lg min-h-16
-                        ${snapshot.isDraggingOver ? 'bg-amber-100' : 'bg-amber-50'}
-                      `}
-                    >
-                      {words.map((word, index) => (
-                        <Draggable key={word.id} draggableId={word.id} index={index}>
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              className={`
-                                word-item bg-amber-500 text-white px-4 py-2 rounded-lg font-medium shadow-sm
-                                ${snapshot.isDragging ? 'shadow-lg scale-105' : ''}
-                                cursor-grab active:cursor-grabbing transition-all
-                              `}
-                              style={{
-                                ...provided.draggableProps.style,
-                                transform: snapshot.isDragging 
-                                  ? `${provided.draggableProps.style?.transform} scale(1.05)`
-                                  : provided.draggableProps.style?.transform
-                              }}
-                            >
-                              {word.content}
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
-              )}
+              <Droppable droppableId="words" direction="horizontal">
+                {(provided, snapshot) => (
+                  <div
+                    {...provided.droppableProps}
+                    ref={provided.innerRef}
+                    className={`
+                      flex flex-wrap justify-center gap-4 p-4 rounded-lg min-h-16
+                      ${snapshot.isDraggingOver ? 'bg-blue-100' : 'bg-blue-50'}
+                    `}
+                  >
+                    {words.map((word, index) => (
+                      <Draggable key={word.id} draggableId={word.id} index={index}>
+                        {(provided, snapshot) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            {...provided.dragHandleProps}
+                            className={`
+                              word-item bg-blue-500 text-white px-4 py-2 rounded-lg font-medium shadow-sm
+                              ${snapshot.isDragging ? 'shadow-lg scale-105' : ''}
+                              cursor-grab active:cursor-grabbing transition-all
+                            `}
+                            style={{
+                              ...provided.draggableProps.style,
+                              transform: snapshot.isDragging 
+                                ? `${provided.draggableProps.style?.transform} scale(1.05)`
+                                : provided.draggableProps.style?.transform
+                            }}
+                          >
+                            {word.content}
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                    {provided.placeholder}
+                  </div>
+                )}
+              </Droppable>
             </DragDropContext>
             
-            {/* Game completion message */}
-            {gameComplete && (
-              <div className="completion-message mt-6 text-center scale-0 opacity-0">
-                <h2 className="text-2xl font-bold text-amber-800 mb-2">Parabéns!</h2>
-                <p className="text-gray-700 mb-4">Você completou o jogo!</p>
-                
-                <div className="bg-amber-50 p-4 rounded-lg mb-6">
-                  <div className="flex justify-between mb-2">
-                    <span>Tempo:</span>
-                    <span>{formatTime(timer)}</span>
-                  </div>
-                  <div className="flex justify-between mb-2">
-                    <span>Estrelas:</span>
-                    <span>{stars}/3</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-amber-800">
-                    <span>Pontuação total:</span>
-                    <span>{score}</span>
-                  </div>
-                </div>
-                
-                <Button
-                  onClick={resetGame}
-                  className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2 rounded-full font-medium transition-all hover:scale-105"
-                >
-                  Jogar Novamente
-                </Button>
-              </div>
-            )}
+            {/* Submit button */}
+            <div className="mt-8 flex justify-center">
+              <Button
+                onClick={handleSubmit}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-medium shadow-lg transition-all hover:shadow-xl hover:scale-105 flex items-center gap-2"
+              >
+                <Check className="w-5 h-5" />
+                Submeter
+              </Button>
+            </div>
+            
+            {/* Instructions */}
+            <div className="mt-6 text-center text-sm text-gray-600">
+              <p>Arraste as palavras para completar as frases e clique em "Submeter".</p>
+            </div>
           </div>
         )}
-      </div>
-      
-      {/* Instructions */}
-      <div className="mt-8 text-center text-sm text-gray-600 max-w-md">
-        <p>Arraste as palavras para completar as frases corretamente.</p>
-        <p>Complete todas as frases para ganhar todas as estrelas!</p>
       </div>
     </div>
   );
