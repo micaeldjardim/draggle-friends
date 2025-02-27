@@ -31,6 +31,7 @@ const Index = () => {
   const [stars, setStars] = useState(0);
   const [timer, setTimer] = useState(0);
   const [bestTime, setBestTime] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const timerRef = useRef<number | null>(null);
   
   // Sound references
@@ -48,6 +49,8 @@ const Index = () => {
 
   // Initialize game
   useEffect(() => {
+    setIsLoading(true);
+    
     // Create audio elements
     dragSoundRef.current = new Audio("/sounds/drag.mp3");
     dropSoundRef.current = new Audio("/sounds/drop.mp3");
@@ -66,11 +69,35 @@ const Index = () => {
       successSoundRef.current
     ];
     
+    let loadedCount = 0;
+    const totalToLoad = audios.length;
+    
     audios.forEach(audio => {
       if (audio) {
+        audio.addEventListener('canplaythrough', () => {
+          loadedCount++;
+          if (loadedCount === totalToLoad) {
+            setIsLoading(false);
+          }
+        }, { once: true });
+        
+        audio.addEventListener('error', () => {
+          // Even if there's an error, we still count it as "loaded" to avoid blocking the game
+          console.error("Failed to load audio:", audio.src);
+          loadedCount++;
+          if (loadedCount === totalToLoad) {
+            setIsLoading(false);
+          }
+        }, { once: true });
+        
         audio.load();
       }
     });
+    
+    // Fallback if audio doesn't load properly
+    const timeout = setTimeout(() => {
+      setIsLoading(false);
+    }, 3000);
     
     // Check for best time in local storage
     const storedBestTime = localStorage.getItem("dragGame_bestTime");
@@ -89,10 +116,11 @@ const Index = () => {
     }
 
     return () => {
-      // Clean up timer
+      // Clean up timer and timeout
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      clearTimeout(timeout);
     };
   }, []);
 
@@ -211,7 +239,7 @@ const Index = () => {
         
         // Shake animation to indicate slot is filled
         gsap.to(`#${slotId}`, {
-          x: [-5, 5, -3, 3, 0],
+          x: [-5, 5, -3, 3, 0] as any,
           duration: 0.4,
           ease: "power2.inOut"
         });
@@ -252,7 +280,11 @@ const Index = () => {
           onComplete: () => {
             // Check stars to award
             const correctCount = updatedSlots.filter(
-              (slot, idx) => slot.content && slot.id === `slot-${idx + 1}`
+              (slot, idx) => {
+                const slotId = `slot-${idx + 1}`;
+                const correctWord = initialWords.find(word => word.correctSlot === slotId);
+                return slot.content && correctWord && slot.content === correctWord.content;
+              }
             ).length;
             
             if (correctCount > stars) {
@@ -268,13 +300,20 @@ const Index = () => {
         
         // Wrong placement animation
         gsap.to(`#${slotId} .word-content`, {
-          x: [-5, 5, -3, 3, 0],
+          x: [-5, 5, -3, 3, 0] as any,
           duration: 0.4,
           ease: "power2.inOut"
         });
       }
     }
   };
+
+  // Initial words (for reference in handleDoubleClick and elsewhere)
+  const initialWords: Word[] = [
+    { id: "word-1", content: "felino", correctSlot: "slot-1" },
+    { id: "word-2", content: "canino", correctSlot: "slot-2" },
+    { id: "word-3", content: "equino", correctSlot: "slot-3" }
+  ];
 
   // Handle double click on a filled slot to return the word
   const handleDoubleClick = (slotId: string) => {
@@ -286,11 +325,7 @@ const Index = () => {
       const wordContent = slots[slotIndex].content;
       
       // Find the word's original details
-      const originalWord = [
-        { id: "word-1", content: "felino", correctSlot: "slot-1" },
-        { id: "word-2", content: "canino", correctSlot: "slot-2" },
-        { id: "word-3", content: "equino", correctSlot: "slot-3" }
-      ].find(w => w.content === wordContent);
+      const originalWord = initialWords.find(w => w.content === wordContent);
       
       if (originalWord) {
         // Update slots
@@ -413,15 +448,17 @@ const Index = () => {
     }
     
     // Calculate score based on correct placements
-    const correctPlacements = slots.filter(
-      (slot, idx) => slot.content && slot.id === `slot-${idx + 1}`
-    ).length;
+    const correctPlacements = slots.filter((slot, idx) => {
+      const slotId = `slot-${idx + 1}`;
+      const correctWord = initialWords.find(word => word.correctSlot === slotId);
+      return slot.content && correctWord && slot.content === correctWord.content;
+    }).length;
     
     // Calculate time bonus
     const timeBonus = Math.max(1000 - (timer * 10), 100);
     
-    // Calculate star count
-    const earnedStars = Math.min(Math.ceil((correctPlacements / 3) * 3), 3);
+    // Calculate star count based on correct placements
+    const earnedStars = Math.min(correctPlacements, 3);
     
     // Calculate final score
     const finalScore = (correctPlacements * 300) + timeBonus;
@@ -519,222 +556,234 @@ const Index = () => {
       className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-blue-50 to-blue-100 p-4"
       ref={gameContainerRef}
     >
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 md:p-8 relative overflow-hidden">
-        {/* Stars container for animations */}
-        <div 
-          ref={starsContainerRef} 
-          className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
-        ></div>
-        
-        {/* Game title */}
-        <h1 className="game-title text-3xl md:text-4xl font-bold text-center mb-8 text-blue-700">
-          English Word Match
-        </h1>
-        
-        {!gameStarted ? (
-          // Start screen
-          <div className="flex flex-col items-center space-y-6">
-            <div className="text-center mb-6">
-              <p className="text-gray-700 mb-4">
-                Arraste as palavras para completar as frases corretamente!
-              </p>
-              <p className="text-blue-600 font-medium">
-                Complete todas as frases para ganhar todas as estrelas!
-              </p>
-            </div>
-            
-            <Button 
-              onClick={startGame}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 rounded-full text-lg font-medium shadow-lg transition-all hover:shadow-xl hover:scale-105"
-            >
-              Começar Jogo
-            </Button>
-            
-            {bestTime !== null && (
-              <p className="text-sm text-gray-600 mt-2">
-                Melhor tempo: {formatTime(bestTime)}
-              </p>
-            )}
+      {isLoading ? (
+        <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
+          <div className="animate-pulse flex flex-col items-center">
+            <div className="h-10 w-40 bg-blue-200 rounded mb-6"></div>
+            <div className="h-5 w-60 bg-blue-100 rounded mb-8"></div>
+            <div className="w-16 h-16 rounded-full border-4 border-blue-300 border-t-blue-600 animate-spin"></div>
+            <p className="mt-6 text-blue-600 font-medium">Carregando recursos...</p>
           </div>
-        ) : showResults ? (
-          // Results screen
+        </div>
+      ) : (
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 md:p-8 relative overflow-hidden">
+          {/* Stars container for animations */}
           <div 
-            ref={resultContainerRef}
-            className="flex flex-col items-center justify-center space-y-8 p-4"
-          >
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-blue-700 mb-2 flex items-center justify-center">
-                <Award className="w-8 h-8 mr-2 text-yellow-500" />
-                Seus Resultados
-              </h2>
-              
-              <p className="text-gray-600 mb-6">
-                {stars === 3 ? "Parabéns! Você acertou tudo!" : 
-                 stars === 2 ? "Muito bom! Você está quase lá!" : 
-                 "Continue praticando para melhorar!"}
-              </p>
-            </div>
-            
-            <div className="flex justify-center mb-6">
-              {[...Array(3)].map((_, index) => (
-                <div key={index} className={`transition-all duration-300 transform ${index < stars ? "scale-110" : "opacity-40"}`}>
-                  <Star 
-                    className={`w-12 h-12 ${index < stars ? "text-yellow-500 fill-yellow-500" : "text-gray-300"}`} 
-                  />
-                </div>
-              ))}
-            </div>
-            
-            <div className="bg-blue-50 p-6 rounded-xl w-full max-w-md">
-              <div className="flex justify-between items-center mb-4 pb-4 border-b border-blue-100">
-                <span className="text-gray-700">Tempo:</span>
-                <span className="font-medium text-blue-700">{formatTime(timer)}</span>
+            ref={starsContainerRef} 
+            className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
+          ></div>
+          
+          {/* Game title */}
+          <h1 className="game-title text-3xl md:text-4xl font-bold text-center mb-8 text-blue-700">
+            English Word Match
+          </h1>
+          
+          {!gameStarted ? (
+            // Start screen
+            <div className="flex flex-col items-center space-y-6">
+              <div className="text-center mb-6">
+                <p className="text-gray-700 mb-4">
+                  Arraste as palavras para completar as frases corretamente!
+                </p>
+                <p className="text-blue-600 font-medium">
+                  Complete todas as frases para ganhar todas as estrelas!
+                </p>
               </div>
               
-              <div className="flex justify-between items-center mb-4 pb-4 border-b border-blue-100">
-                <span className="text-gray-700">Estrelas:</span>
-                <span className="font-medium text-blue-700">{stars}/3</span>
-              </div>
-              
-              <div className="flex justify-between items-center text-lg font-bold">
-                <span className="text-gray-800">Pontuação:</span>
-                <span className="text-blue-700">{score} pontos</span>
-              </div>
-            </div>
-            
-            <div className="flex gap-4 mt-6">
-              <Button
-                onClick={resetGame}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium transition-all hover:scale-105"
+              <Button 
+                onClick={startGame}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 rounded-full text-lg font-medium shadow-lg transition-all hover:shadow-xl hover:scale-105"
               >
-                Jogar Novamente
+                Começar Jogo
               </Button>
               
-              <Button
-                onClick={() => setGameStarted(false)}
-                variant="outline"
-                className="border-blue-300 text-blue-700 hover:bg-blue-50 px-6 py-2 rounded-full font-medium transition-all"
-              >
-                Menu Principal
-              </Button>
+              {bestTime !== null && (
+                <p className="text-sm text-gray-600 mt-2">
+                  Melhor tempo: {formatTime(bestTime)}
+                </p>
+              )}
             </div>
-          </div>
-        ) : (
-          // Game screen
-          <div className="relative">
-            {/* Timer display */}
-            <div className="absolute top-0 right-0 bg-blue-100 px-3 py-1 rounded-lg text-blue-800 font-medium">
-              {formatTime(timer)}
-            </div>
-            
-            {/* Stars display */}
-            <div className="absolute top-0 left-0 flex">
-              {[...Array(3)].map((_, index) => (
-                <span key={index} className="text-2xl transition-all duration-500 transform">
-                  {index < stars ? "⭐" : "☆"}
-                </span>
-              ))}
-            </div>
-            
-            <DragDropContext 
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
+          ) : showResults ? (
+            // Results screen
+            <div 
+              ref={resultContainerRef}
+              className="flex flex-col items-center justify-center space-y-8 p-4"
             >
-              {/* Slots for dropping words */}
-              <div className="mb-8 space-y-4 mt-12">
-                {slots.map((slot) => (
-                  <div key={slot.id} className="relative">
-                    <Droppable droppableId={slot.id}>
-                      {(provided, snapshot) => (
-                        <div
-                          {...provided.droppableProps}
-                          ref={provided.innerRef}
-                          id={slot.id}
-                          className={`
-                            flex items-center p-4 rounded-lg transition-all
-                            ${snapshot.isDraggingOver ? 'bg-blue-100' : 'bg-blue-50'}
-                            ${slot.content ? 'border-2 border-blue-400' : 'border-2 border-blue-200 border-dashed'}
-                          `}
-                          onDoubleClick={() => handleDoubleClick(slot.id)}
-                        >
-                          <span className="text-gray-800 font-medium mr-2">{slot.prefix}</span>
-                          
-                          {slot.content ? (
-                            <div className="word-content bg-blue-600 text-white px-4 py-2 rounded-lg font-medium cursor-pointer" title="Duplo clique para remover">
-                              {slot.content}
-                            </div>
-                          ) : (
-                            <div className="h-10 w-24 bg-blue-100 rounded-lg border-2 border-blue-200 border-dashed"></div>
-                          )}
-                          
-                          {provided.placeholder}
-                        </div>
-                      )}
-                    </Droppable>
+              <div className="text-center">
+                <h2 className="text-2xl font-bold text-blue-700 mb-2 flex items-center justify-center">
+                  <Award className="w-8 h-8 mr-2 text-yellow-500" />
+                  Seus Resultados
+                </h2>
+                
+                <p className="text-gray-600 mb-6">
+                  {stars === 3 ? "Parabéns! Você acertou tudo!" : 
+                   stars === 2 ? "Muito bom! Você está quase lá!" : 
+                   stars === 1 ? "Bom começo! Continue praticando!" : 
+                   "Continue praticando para melhorar!"}
+                </p>
+              </div>
+              
+              <div className="flex justify-center mb-6">
+                {[...Array(3)].map((_, index) => (
+                  <div key={index} className={`transition-all duration-300 transform ${index < stars ? "scale-110" : "opacity-40"}`}>
+                    <Star 
+                      className={`w-12 h-12 ${index < stars ? "text-yellow-500 fill-yellow-500" : "text-gray-300"}`} 
+                    />
                   </div>
                 ))}
               </div>
               
-              {/* Words to drag */}
-              <Droppable droppableId="words" direction="horizontal">
-                {(provided, snapshot) => (
-                  <div
-                    {...provided.droppableProps}
-                    ref={provided.innerRef}
-                    className={`
-                      flex flex-wrap justify-center gap-4 p-4 rounded-lg min-h-16
-                      ${snapshot.isDraggingOver ? 'bg-blue-100' : 'bg-blue-50'}
-                    `}
-                  >
-                    {words.map((word, index) => (
-                      <Draggable key={word.id} draggableId={word.id} index={index}>
+              <div className="bg-blue-50 p-6 rounded-xl w-full max-w-md">
+                <div className="flex justify-between items-center mb-4 pb-4 border-b border-blue-100">
+                  <span className="text-gray-700">Tempo:</span>
+                  <span className="font-medium text-blue-700">{formatTime(timer)}</span>
+                </div>
+                
+                <div className="flex justify-between items-center mb-4 pb-4 border-b border-blue-100">
+                  <span className="text-gray-700">Estrelas:</span>
+                  <span className="font-medium text-blue-700">{stars}/3</span>
+                </div>
+                
+                <div className="flex justify-between items-center text-lg font-bold">
+                  <span className="text-gray-800">Pontuação:</span>
+                  <span className="text-blue-700">{score} pontos</span>
+                </div>
+              </div>
+              
+              <div className="flex gap-4 mt-6">
+                <Button
+                  onClick={resetGame}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium transition-all hover:scale-105"
+                >
+                  Jogar Novamente
+                </Button>
+                
+                <Button
+                  onClick={() => setGameStarted(false)}
+                  variant="outline"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50 px-6 py-2 rounded-full font-medium transition-all"
+                >
+                  Menu Principal
+                </Button>
+              </div>
+            </div>
+          ) : (
+            // Game screen
+            <div className="relative">
+              {/* Timer display */}
+              <div className="absolute top-0 right-0 bg-blue-100 px-3 py-1 rounded-lg text-blue-800 font-medium">
+                {formatTime(timer)}
+              </div>
+              
+              {/* Stars display */}
+              <div className="absolute top-0 left-0 flex">
+                {[...Array(3)].map((_, index) => (
+                  <span key={index} className="text-2xl transition-all duration-500 transform">
+                    {index < stars ? "⭐" : "☆"}
+                  </span>
+                ))}
+              </div>
+              
+              <DragDropContext 
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              >
+                {/* Slots for dropping words */}
+                <div className="mb-8 space-y-4 mt-12">
+                  {slots.map((slot) => (
+                    <div key={slot.id} className="relative">
+                      <Droppable droppableId={slot.id}>
                         {(provided, snapshot) => (
                           <div
+                            {...provided.droppableProps}
                             ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            {...provided.dragHandleProps}
+                            id={slot.id}
                             className={`
-                              word-item bg-blue-500 text-white px-4 py-2 rounded-lg font-medium shadow-sm
-                              ${snapshot.isDragging ? 'shadow-lg scale-105' : ''}
-                              cursor-grab active:cursor-grabbing transition-all
+                              flex items-center p-4 rounded-lg transition-all
+                              ${snapshot.isDraggingOver ? 'bg-blue-100' : 'bg-blue-50'}
+                              ${slot.content ? 'border-2 border-blue-400' : 'border-2 border-blue-200 border-dashed'}
                             `}
-                            style={{
-                              ...provided.draggableProps.style,
-                              transform: snapshot.isDragging 
-                                ? `${provided.draggableProps.style?.transform} scale(1.05)`
-                                : provided.draggableProps.style?.transform
-                            }}
+                            onDoubleClick={() => handleDoubleClick(slot.id)}
                           >
-                            {word.content}
+                            <span className="text-gray-800 font-medium mr-2">{slot.prefix}</span>
+                            
+                            {slot.content ? (
+                              <div className="word-content bg-blue-600 text-white px-4 py-2 rounded-lg font-medium cursor-pointer" title="Duplo clique para remover">
+                                {slot.content}
+                              </div>
+                            ) : (
+                              <div className="h-10 w-24 bg-blue-100 rounded-lg border-2 border-blue-200 border-dashed"></div>
+                            )}
+                            
+                            {provided.placeholder}
                           </div>
                         )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
-                  </div>
-                )}
-              </Droppable>
-            </DragDropContext>
-            
-            {/* Submit button */}
-            <div className="mt-8 flex justify-center">
-              <Button
-                onClick={handleSubmit}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-medium shadow-lg transition-all hover:shadow-xl hover:scale-105 flex items-center gap-2"
-              >
-                <Check className="w-5 h-5" />
-                Submeter
-              </Button>
+                      </Droppable>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Words to drag */}
+                <Droppable droppableId="words" direction="horizontal">
+                  {(provided, snapshot) => (
+                    <div
+                      {...provided.droppableProps}
+                      ref={provided.innerRef}
+                      className={`
+                        flex flex-wrap justify-center gap-4 p-4 rounded-lg min-h-16
+                        ${snapshot.isDraggingOver ? 'bg-blue-100' : 'bg-blue-50'}
+                      `}
+                    >
+                      {words.map((word, index) => (
+                        <Draggable key={word.id} draggableId={word.id} index={index}>
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              className={`
+                                word-item bg-blue-500 text-white px-4 py-2 rounded-lg font-medium shadow-sm
+                                ${snapshot.isDragging ? 'shadow-lg scale-105' : ''}
+                                cursor-grab active:cursor-grabbing transition-all
+                              `}
+                              style={{
+                                ...provided.draggableProps.style,
+                                transform: snapshot.isDragging 
+                                  ? `${provided.draggableProps.style?.transform} scale(1.05)`
+                                  : provided.draggableProps.style?.transform
+                              }}
+                            >
+                              {word.content}
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              </DragDropContext>
+              
+              {/* Submit button */}
+              <div className="mt-8 flex justify-center">
+                <Button
+                  onClick={handleSubmit}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-medium shadow-lg transition-all hover:shadow-xl hover:scale-105 flex items-center gap-2"
+                >
+                  <Check className="w-5 h-5" />
+                  Submeter
+                </Button>
+              </div>
+              
+              {/* Instructions */}
+              <div className="mt-6 text-center text-sm text-gray-600">
+                <p>Arraste as palavras para completar as frases e clique em "Submeter".</p>
+                <p className="mt-1 italic">Dica: Você pode dar um duplo clique nas palavras já colocadas para retirá-las.</p>
+              </div>
             </div>
-            
-            {/* Instructions */}
-            <div className="mt-6 text-center text-sm text-gray-600">
-              <p>Arraste as palavras para completar as frases e clique em "Submeter".</p>
-              <p className="mt-1 italic">Dica: Você pode dar um duplo clique nas palavras já colocadas para retirá-las.</p>
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
