@@ -245,11 +245,22 @@ const Index = () => {
         }
         
         // Shake animation to indicate slot is filled
-        gsap.to(`#${slotId}`, {
-          x: "-=5px, +=10px, -=6px, +=6px, -=5px", // Fix: Changed to relative values
-          duration: 0.4,
-          ease: "power2.inOut"
-        });
+        const slotElement = document.getElementById(slotId);
+        if (slotElement) {
+          gsap.fromTo(slotElement, 
+            { x: 0 }, 
+            { 
+              x: -5, 
+              duration: 0.1, 
+              ease: "power1.inOut",
+              repeat: 5,
+              yoyo: true,
+              onComplete: () => {
+                gsap.set(slotElement, { clearProps: "x" });
+              }
+            }
+          );
+        }
         
         return;
       }
@@ -270,7 +281,7 @@ const Index = () => {
       setSlots(updatedSlots);
       setWords(updatedWords);
       
-      // Wait for the DOM to update before applying animations (no displacement animation)
+      // Explicitly set a timeout to wait for DOM update before animations
       setTimeout(() => {
         const wordElement = document.querySelector(`#${slotId} .word-content`);
         if (wordElement) {
@@ -281,52 +292,58 @@ const Index = () => {
               correctSoundRef.current.play().catch(e => console.error("Audio play error:", e));
             }
             
-            // Celebrate with animation - scale only, no displacement
-            gsap.to(wordElement, {
-              scale: 1.2,
-              duration: 0.3,
-              yoyo: true,
-              repeat: 1,
-              ease: "elastic.out(1, 0.3)",
-              onComplete: () => {
-                // Check stars to award - Only if game is in progress (not on start screen)
-                if (gameStarted && !showResults) {
-                  const correctCount = updatedSlots.filter(
-                    (slot, idx) => {
-                      const slotId = `slot-${idx + 1}`;
-                      const correctWord = initialWords.find(word => word.correctSlot === slotId);
-                      return slot.content && correctWord && slot.content === correctWord.content;
-                    }
-                  ).length;
+            // Celebrate with animation - only scale effect
+            gsap.fromTo(wordElement, 
+              { scale: 1 },
+              { 
+                scale: 1.2, 
+                duration: 0.15, 
+                yoyo: true, 
+                repeat: 1, 
+                ease: "power2.inOut",
+                onComplete: () => {
+                  gsap.set(wordElement, { clearProps: "scale" });
                   
-                  if (correctCount > stars) {
-                    addStar();
+                  // Check stars to award - Only if game is in progress (not on start screen)
+                  if (gameStarted && !showResults) {
+                    const correctCount = updatedSlots.filter(
+                      (slot, idx) => {
+                        const slotId = `slot-${idx + 1}`;
+                        const correctWord = initialWords.find(word => word.correctSlot === slotId);
+                        return slot.content && correctWord && slot.content === correctWord.content;
+                      }
+                    ).length;
+                    
+                    if (correctCount > stars) {
+                      addStar();
+                    }
                   }
                 }
               }
-            });
+            );
           } else {
             if (wrongSoundRef.current) {
               wrongSoundRef.current.currentTime = 0;
               wrongSoundRef.current.play().catch(e => console.error("Audio play error:", e));
             }
             
-            // Wrong placement animation - subtle shake without displacement
-            gsap.to(wordElement, {
-              rotation: "random([-5, 5, -3, 3])",
-              duration: 0.4,
-              ease: "power2.inOut",
-              onComplete: () => {
-                // Reset rotation after animation
-                gsap.to(wordElement, {
-                  rotation: 0,
-                  duration: 0.2
-                });
+            // Wrong placement animation - rotation only (no displacement)
+            gsap.fromTo(wordElement, 
+              { rotation: 0 },
+              { 
+                rotation: -5, 
+                duration: 0.1, 
+                ease: "power1.inOut",
+                repeat: 5,
+                yoyo: true,
+                onComplete: () => {
+                  gsap.set(wordElement, { clearProps: "rotation" });
+                }
               }
-            });
+            );
           }
         }
-      }, 50); // Short delay to ensure DOM has updated
+      }, 50);
     }
   };
 
@@ -585,8 +602,8 @@ const Index = () => {
         </div>
       ) : (
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 md:p-8 relative overflow-hidden">
-          {/* Stars container for animations - Only show when game has started */}
-          {gameStarted && (
+          {/* Stars container for animations - Only show when game has started AND not on start screen */}
+          {gameStarted && !showResults && (
             <div 
               ref={starsContainerRef} 
               className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
