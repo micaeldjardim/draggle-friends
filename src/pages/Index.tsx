@@ -246,7 +246,7 @@ const Index = () => {
         
         // Shake animation to indicate slot is filled
         gsap.to(`#${slotId}`, {
-          x: "-5px, 5px, -3px, 3px, 0px", // Fix: Changed from array to string with units
+          x: "-=5px, +=10px, -=6px, +=6px, -=5px", // Fix: Changed to relative values
           duration: 0.4,
           ease: "power2.inOut"
         });
@@ -270,7 +270,7 @@ const Index = () => {
       setSlots(updatedSlots);
       setWords(updatedWords);
       
-      // Fixed: we need to wait for the DOM to update before applying animations
+      // Wait for the DOM to update before applying animations (no displacement animation)
       setTimeout(() => {
         const wordElement = document.querySelector(`#${slotId} .word-content`);
         if (wordElement) {
@@ -281,7 +281,7 @@ const Index = () => {
               correctSoundRef.current.play().catch(e => console.error("Audio play error:", e));
             }
             
-            // Celebrate with animation
+            // Celebrate with animation - scale only, no displacement
             gsap.to(wordElement, {
               scale: 1.2,
               duration: 0.3,
@@ -311,11 +311,18 @@ const Index = () => {
               wrongSoundRef.current.play().catch(e => console.error("Audio play error:", e));
             }
             
-            // Wrong placement animation
+            // Wrong placement animation - subtle shake without displacement
             gsap.to(wordElement, {
-              x: "random([0, -5px, 5px, -3px, 3px])", // Fix: Changed from array to string with units and GSAP's random function
+              rotation: "random([-5, 5, -3, 3])",
               duration: 0.4,
-              ease: "power2.inOut"
+              ease: "power2.inOut",
+              onComplete: () => {
+                // Reset rotation after animation
+                gsap.to(wordElement, {
+                  rotation: 0,
+                  duration: 0.2
+                });
+              }
             });
           }
         }
@@ -578,11 +585,13 @@ const Index = () => {
         </div>
       ) : (
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-6 md:p-8 relative overflow-hidden">
-          {/* Stars container for animations */}
-          <div 
-            ref={starsContainerRef} 
-            className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
-          ></div>
+          {/* Stars container for animations - Only show when game has started */}
+          {gameStarted && (
+            <div 
+              ref={starsContainerRef} 
+              className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
+            ></div>
+          )}
           
           {/* Game title */}
           <h1 className="game-title text-3xl md:text-4xl font-bold text-center mb-8 text-blue-700">
